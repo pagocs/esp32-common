@@ -443,6 +443,8 @@ void MQTTConnect( const char * node , const char * user , const char * psw )
     _MQTTloopinit();
 }
 
+//------------------------------------------------------------------------------
+
 void _MQTTPublish( const char * topic , const char * msg )
 {
 int obtained = pdTRUE;
@@ -512,6 +514,8 @@ public:
     };
 
 };
+
+//------------------------------------------------------------------------------
 
 std::vector<MQTTqueueitem*> MQTTqueue;
 

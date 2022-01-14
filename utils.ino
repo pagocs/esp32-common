@@ -12,41 +12,6 @@
 String devicebooted;
 
 //------------------------------------------------------------------------------
-
-// #ifdef DEBUG_MODE
-// #undef DEBUG_MODE
-// #endif // DEBUG_PRINTF
-// #define DEBUG_MODE() SYSTEMdebug
-//
-// #ifdef DEBUG_PRINTF
-// #undef DEBUG_PRINTF
-// //#define DEBUG_PRINTF(f_, ...)
-// #endif //DEBUG_PRINTF
-//
-// bool SYSTEMdebug = false;
-//
-// #define DEBUG_PRINTF(f_, ... ) if( SYSTEMdebug ) { rprintf((f_), ##__VA_ARGS__); }
-//
-// //------------------------------------------------------------------------------
-// // prototypes
-//
-// void rprintf( const char * format, ... );
-// String getMacAddress( bool compact = false );
-// void remoteprintinit( void );
-//
-// //------------------------------------------------------------------------------
-// // FIXME
-// // error: 'min' was not declared in this scope
-//
-// #define min(a,b) ((a)<(b)?(a):(b))
-
-//------------------------------------------------------------------------------
-// FIXME
-// strcasestr not defined in ESP32 environment
-// The following does not worked...
-// #define _GNU_SOURCE
-// #include <sys/cdefs.h>
-
 // Source: https://android.googlesource.com/platform/bionic/+/fe6338d/libc/string/strcasestr.c
 /*
  * Find the first occurrence of find in s, ignore case.
@@ -282,6 +247,7 @@ int obtained = pdTRUE;
 // This functions are created because the Acurite0899 firmware
 // reset and MDNS rescan issue.
 // !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 reatartprolog_t UTILSonrestart = NULL;
 
 void registerprerestart( reatartprolog_t onrestart )

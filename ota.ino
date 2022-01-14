@@ -65,8 +65,6 @@ void OTAinit( int port , const char *hostname , const char *password , voidfunc_
             if( OTAonstart != NULL )
             {
                 OTAonstart();
-                // FIXME: add thit to acurate module!!!
-                //detachInterrupt(digitalPinToInterrupt(DATAPIN));
             }
 
         });
