@@ -2,7 +2,7 @@
 // #define _UTILS
 
 // ESP32 Utilities
-#include <ESP.h>
+#include <Esp.h>
 #include "esp_system.h"
 #include <utils.h>
 #include <wificonnect.h>
@@ -131,7 +131,7 @@ void utilsinit( void )
 // Debug out over Wifi
 // Use nc <ip> 80
 #include <WiFi.h>
-#include <WifiClient.h>
+#include <WiFiClient.h>
 #include <WifiServer.h>
 
 WiFiServer 	debugserver(80);
