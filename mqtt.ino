@@ -1,11 +1,10 @@
-#include <ESP.h>
+#include <Esp.h>
 #include <WiFi.h>
 #include <string.h>
 #include <math.h>
 #include <ArduinoJson.h>
 #include <vector>
-
-#include <Time.h>
+#include <time.h>
 
 // Resources
 // ArduinoJson

@@ -1,7 +1,7 @@
 #ifndef _WOL_H
 #define _WOL_H_H
 
-#include <WiFiUDP.h>
+#include <WiFiUdp.h>
 
 //------------------------------------------------------------------------------
 

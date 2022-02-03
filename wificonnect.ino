@@ -1,6 +1,5 @@
 #include <WiFi.h>
 #include <ledblink.h>
-// // #include <utils.h>
 #include <wificonnect.h>
 
 //------------------------------------------------------------------------------
