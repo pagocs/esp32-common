@@ -34,6 +34,14 @@ char * strcasestr(const char *s, const char *find)
 	}
 	return ((char *)s);
 }
+
+//----------------------------------------------------------------------
+
+bool numtobool( int value )
+{
+	return (value == 0 ) ? false : true;
+}
+
 //----------------------------------------------------------------------
 /* Time Stamp */
 
@@ -188,13 +196,15 @@ void remoteprintinit( void )
 			// FIXME: Init if not inited!
 			//Serial.begin(BAUD);    // Initialise the serial port
 			rprintinited = true;
-			// mutex_rptintf = xSemaphoreCreateMutex();
-			vSemaphoreCreateBinary( mutex_rptintf );
 		}
 		else
 		{
-			Serial.printf("!!! ERROR: Remote print cannot init before Wifi connect!\n");
+			Serial.printf("!!! ERROR: Remote print cannot init use without Wifi connection!\n");
 		}
+
+		// mutex_rptintf = xSemaphoreCreateMutex();
+		vSemaphoreCreateBinary( mutex_rptintf );
+
 	}
 
 }
@@ -202,14 +212,6 @@ void remoteprintinit( void )
 void rprintf( const char * format, ... )
 {
 int obtained = pdTRUE;
-
-	if( mutex_rptintf != NULL )
-	{
-		obtained = xSemaphoreTake( mutex_rptintf, portMAX_DELAY );
-	}
-
-	if( obtained != pdTRUE )
-		return;
 
 	char buffer[512];
 	int size;
@@ -219,6 +221,13 @@ int obtained = pdTRUE;
 	size = vsnprintf(buffer,sizeof(buffer),format, args);
 	va_end(args);
 
+	if( mutex_rptintf != NULL )
+	{
+		obtained = xSemaphoreTake( mutex_rptintf, portMAX_DELAY );
+		if( obtained != pdTRUE )
+			return;
+	}
+
 	if(rprintinited && debugclient && debugclient.connected() )
 	{
 		debugclient.printf(buffer);
@@ -227,12 +236,10 @@ int obtained = pdTRUE;
 	{
 		Serial.printf( buffer );
 	}
-
     if( size > sizeof(buffer) )
     {
         Serial.printf("\n!!! WARNING: Buffer is shorter than necessary, output is truncated.\n");
     }
-
 	if( mutex_rptintf != NULL )
 	{
 		xSemaphoreGive( mutex_rptintf );

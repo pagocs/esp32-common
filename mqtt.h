@@ -46,6 +46,8 @@ struct MQTTcallbackitem {
 
 //------------------------------------------------------------------------------
 
+#define TEST_TOPIC    "test"
+#define RFLINK_RECEIVE_TOPIC    "rflink/in"
 // MQTT controller ttopics
 #define MQTT_CONTROLLERCOMMANDS "controllers"
 
@@ -58,6 +60,8 @@ void _MQTTCallback( char* , uint8_t * , unsigned int );
 
 #define MQTT_LUMINANCE "luminance"
 #define MQTT_MOTION "motion"
+#define MQTT_GPIOIN "GPIOin"
+#define MQTT_RELAY "relay"
 #define MQTT_SENSORTOPIC "sensors"
 #define MQTT_TEMPHUMBARO "temp+hum+baro"
 // #define MQTT_TEMPHUMBARO "temp hum baro"

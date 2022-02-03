@@ -52,3 +52,13 @@ void LEDBlink::enable( void )
 {
     ledblink( LEDBLINK_INIT );
 }
+
+void LEDBlink::on( void )
+{
+    ledblink( LEDBLINK_ON );
+}
+
+void LEDBlink::off( void )
+{
+    ledblink( LEDBLINK_OFF );
+}

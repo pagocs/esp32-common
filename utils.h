@@ -56,7 +56,7 @@ typedef void (*reatartprolog_t)();
 void registerprerestart( reatartprolog_t onrestart );
 void restart( void );
 void prerestart( void );
-
+bool numtobool( int );
 //------------------------------------------------------------------------------
 //  This is for backward compatibility for earlier projects
 
@@ -118,7 +118,16 @@ class DSTTime {
 	const char* server2;
 	const char* server3;
 	const char* timezone = NULL;
+	unsigned long lasterrorprint = 0;
 
+	void errorprint( const char *errormsg )
+	{
+		if( (millis() - lasterrorprint) > 15000 )
+		{
+			rprintf( errormsg );
+			lasterrorprint = millis();
+		}
+	}
   public:
 
  	DSTTime( long param_gmtOffset_sec, int param_daylightOffset_sec, const char* param_server1, const char* param_server2, const char* param_server3 , const char* parma_timezone = NULL )
@@ -182,36 +191,36 @@ class DSTTime {
     int getDay()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_wday;
 	};
     int getHours()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_hour;
 	}
     int getMinutes()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if (!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_min;
 	}
     int getSeconds()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_sec;
 	}
@@ -234,7 +243,7 @@ class DSTTime {
 	{
 		char	date[128];
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
 			rprintf("Failed to obtain time\n");
 		}

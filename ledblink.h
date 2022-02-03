@@ -25,6 +25,8 @@
 #define LEDBLINK_INIT -1
 #define LEDBLINK_DISABLE -5
 #define LEDBLINK_NOPARAM -2
+#define LEDBLINK_ON 1
+#define LEDBLINK_OFF 0
 
 // FIXME:
 // Legacy
@@ -40,6 +42,8 @@ class LEDBlink {
         void blink( void );
         void disable( void );
         void enable( void  );
+        void on( void );
+        void off( void );
 };
 
 #include <ledblink.ino>

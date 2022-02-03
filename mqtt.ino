@@ -809,7 +809,7 @@ void _MQTTloopthread( void * params )
             // }
             // Handle the MQTT queue
 
-            if( mqttloopthreadcount%(10*60) == 0 )
+            if( mqttloopthreadcount%(2400) == 0 )
             {
                 rprintf("%s: MQTT loop thread running on core: %d MQTT server: %s:%u Queue items: %d\n" , timeClient.getFormattedTime().c_str() , xPortGetCoreID() , MQTTserver.c_str() , (unsigned int)MQTTserverport , MQTTqueue.size() );
                 if( MQTTconnectionfail )
@@ -896,6 +896,7 @@ void _MQTTloopinit( void )
 
     if( pxMQTTloopthread == NULL )
     {
+        // xTaskCreatePinnedToCore
         xTaskCreate(
             _MQTTloopthread,         /* pvTaskCode */
             "MQTT loop",             /* pcName */
