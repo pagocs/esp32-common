@@ -103,7 +103,8 @@ void MQTTquerybrokers( bool forcerescan )
 {
 bool prefs;
 int i,brokers;
-StaticJsonBuffer<512> mqttjson;
+// StaticJsonDocument<512> mqttjson;
+StaticJsonDocument<512> array;
 
     // FIXME
     // Currently there is an bug in the SDK about the MDNS.queryService which is cause
@@ -120,8 +121,10 @@ StaticJsonBuffer<512> mqttjson;
 
         if( MQTTprefs.getBytes("Brokers", jsonbuff , sizeof(jsonbuff)) )
         {
-            JsonArray& array = mqttjson.parseArray(jsonbuff);
-            if( array.success() && array.size() > 0 )
+            // JsonArray& array = mqttjson.parseArray(jsonbuff);
+            DeserializationError err = deserializeJson(array,jsonbuff);
+            // if( array.success() && array.size() > 0 )
+            if( err == DeserializationError::Ok && array.size() > 0 )
             {
                 rprintf( "Num of stored brokers: %d\n",array.size());
                 // for (auto value : arr) {
@@ -132,14 +135,14 @@ StaticJsonBuffer<512> mqttjson;
                 for( i = 0 ; i < MQTTnumofbrokers ; i++ )
                 {
                     rprintf( "Add broker: host: %s ip: %s:%u \n" ,
-                        array[i]["hostname"].as<char *>(),
-                        array[i]["ip"].as<char *>(),
+                        array[i]["hostname"].as<const char *>(),
+                        array[i]["ip"].as<const char *>(),
                         array[i]["port"].as<unsigned int>()
                     );
                     MQTTbrokers[i] = new struct MDNShost;
                     MQTTbrokers[i]->hostname = array[i]["hostname"].as<String>();
                     IPAddress ip;
-                    ip.fromString( array[i]["ip"].as<char *>() );
+                    ip.fromString( array[i]["ip"].as<const char *>() );
                     MQTTbrokers[i]->ip = ip;
                     MQTTbrokers[i]->port = array[i]["port"].as<unsigned int>();
                 }
@@ -172,7 +175,8 @@ StaticJsonBuffer<512> mqttjson;
             rprintf( "!!! ERROR: Unable to restore broker settings!\n");
         }
     }
-    mqttjson.clear();
+    // mqttjson.clear();
+    array.clear();
     brokers = MDNSbrowseservice("mqtt", "tcp");
     if( brokers )
     {
@@ -186,7 +190,8 @@ StaticJsonBuffer<512> mqttjson;
         //MQTTprefs.clear();
         MQTTprefs.remove( "Brokers" );
         rprintf( "Old brokers deleted...\n" );
-        JsonArray& array = mqttjson.createArray();
+
+        // JsonArray& array = mqttjson.createArray();
         //----------------------------------------------------------------------
         rprintf( "Store brokers...\n" );
         MQTTnumofbrokers = brokers;
@@ -196,7 +201,7 @@ StaticJsonBuffer<512> mqttjson;
             // Store in prefs
             if( prefs )
             {
-                JsonObject& nested = array.createNestedObject();
+                JsonObject nested = array.createNestedObject();
                 nested["hostname"] = MQTTbrokers[i]->hostname;
                 rprintf( "IP: %s\n", MQTTbrokers[i]->ip.toString().c_str());
                 nested["ip"] = (char *)MQTTbrokers[i]->ip.toString().c_str();
@@ -207,7 +212,9 @@ StaticJsonBuffer<512> mqttjson;
         {
             // Save MQTT brokers to prefs
             String jsonbuff;
-            array.prettyPrintTo( jsonbuff );
+            // array.prettyPrintTo( jsonbuff );
+            serializeJsonPretty( array , jsonbuff );
+            
             rprintf( "Brokers JSON: %s\n" , jsonbuff.c_str());
             // DEBUG_PRINTF( "Brokers JSON: %s\n" , jsonbuff.c_str());
             rprintf( "Store presets...\n" );
@@ -627,9 +634,12 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
             )
             {
                 DEBUG_PRINTF( ">>> MQTT controller target is matched.\n" );
-                StaticJsonBuffer<255> json;
-                JsonObject& root = json.parseObject((const char*)payloadstr);
-                if( root.success() )
+                // StaticJsonDocument<255> json;
+                // JsonObject root = json.parseObject((const char*)payloadstr);
+                // if( root.success() )
+                StaticJsonDocument<255> root;
+                DeserializationError err = deserializeJson(root, (const char*)payload);
+                if( err == DeserializationError::Ok )
                 {
                     if( root.containsKey("command") )
                     {
@@ -944,18 +954,29 @@ void MQTTend( void )
 
 //------------------------------------------------------------------------------
 
-void jsonmerge(JsonObject& dest, JsonObject& src) {
-   for (auto kvp : src)
+//  JSON 5.x
+// void jsonmerge(JsonObject dest, JsonObject src) {
+//    for (auto kvp : src)
+//    {
+//        dest[kvp.key] = kvp.value;
+//    }
+// }
+
+// JSON 6.x
+void jsonmerge(JsonObject dest, JsonObjectConst src)
+{
+   for (JsonPairConst kvp : src)
    {
-       dest[kvp.key] = kvp.value;
+     dest[kvp.key().c_str()] = kvp.value();
    }
 }
 
 //------------------------------------------------------------------------------
 
-void MQTTbase::publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject& values  )
+void MQTTbase::publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject values  )
 {
-StaticJsonBuffer<128> jsonBuffer;
+// StaticJsonDocument<128> jsonBuffer;
+StaticJsonDocument<128> root;
 String topic;
 String payload;
 
@@ -963,11 +984,15 @@ String payload;
     // FIXME:  legacy
 
     topic = basetopic + String('/') + device + String('/') + devclass;
-    JsonObject& root = jsonBuffer.createObject();
+    // JsonObject root = jsonBuffer.createObject();
+    // root = values;
     root["name"] = name;
     root["type"] = type;
-    jsonmerge( root , values );
-    root.printTo( payload );
+
+    jsonmerge( root.as<JsonObject>() , values );
+
+    // root.printTo( payload );
+    serializeJson( root , payload );
     // payload.replace( "\\r\\n" , "" );
     MQTTPublish( topic , payload );
     // rprintf( "%s: MQTTbase::publish::topic: %s payload: %s\n" , timeClient.getFormattedTime().c_str() , topic.c_str() ,  payload.c_str());

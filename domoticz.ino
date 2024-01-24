@@ -134,7 +134,7 @@ void updatedomoticz_temp( const char * domo ,  int idx , float temp , float hum 
 
 unsigned int _getdomoticz_temp( const char * domo ,  int idx , float * temp , float * humidity )
 {
-DynamicJsonBuffer jsonBuffer(1700);
+DynamicJsonDocument root(1700);
 HTTPClient http;
 char url[256];
 
@@ -163,10 +163,12 @@ char url[256];
             rprintf( "HTTP response size: %d\n", bodylen );
 
             // String payload = http.getString();
-            JsonObject& root = jsonBuffer.parseObject( http.getString() );
-            if( root.success() && root.containsKey("result") )
+            // JsonObject root = jsonBuffer.parseObject( http.getString() );
+            // if( root.success() && root.containsKey("result") )
+            DeserializationError err = deserializeJson(root, http.getString() );
+            if( err == DeserializationError::Ok  && root.containsKey("result") )
             {
-                JsonObject& result = root["result"][0];
+                JsonObject result = root["result"][0];
                 if( result.containsKey("Temp") &&
                     (humidity == NULL || result.containsKey("Humidity") )
                 )
@@ -219,7 +221,7 @@ unsigned int _getdomoticz_temp( const char * domo ,  int idx , float &temp , flo
 
 unsigned int getdomoticz_counter( const char * domo ,  int idx , float * value , float * todayvalue )
 {
-DynamicJsonBuffer jsonBuffer(1700);
+DynamicJsonDocument root(1700);
 HTTPClient http;
 char url[256];
 
@@ -250,11 +252,13 @@ char url[256];
             int bodylen = http.getSize();
             rprintf( "HTTP response size: %d\n", bodylen );
 
-            // JsonObject& root = jsonBuffer.parseObject(payload);
-            JsonObject& root = jsonBuffer.parseObject( http.getString() );
-            if( root.success() && root.containsKey("result") )
+            // JsonObject root = jsonBuffer.parseObject(payload);
+            // JsonObject root = jsonBuffer.parseObject( http.getString() );
+            // if( root.success() && root.containsKey("result") )
+            DeserializationError err = deserializeJson(root, http.getString() );
+            if( err == DeserializationError::Ok  && root.containsKey("result") )
             {
-                JsonObject& result = root["result"][0];
+                JsonObject result = root["result"][0];
                 if( result.containsKey("Counter") &&
                   (todayvalue == NULL || result.containsKey("CounterToday") )
                 )
@@ -301,7 +305,7 @@ char url[256];
 
 unsigned int getdomoticz_selector( const char * domo ,  int idx , int * value )
 {
-DynamicJsonBuffer jsonBuffer(1700);
+DynamicJsonDocument root(1700);
 HTTPClient http;
 char url[256];
 
@@ -329,10 +333,12 @@ char url[256];
             int bodylen = http.getSize();
             rprintf( "HTTP response size: %d\n", bodylen );
 
-            JsonObject& root = jsonBuffer.parseObject(http.getString());
-            if( root.success() && root.containsKey("result") )
+            // JsonObject root = jsonBuffer.parseObject(http.getString());
+            // if( root.success() && root.containsKey("result") )
+            DeserializationError err = deserializeJson(root, http.getString() );
+            if( err == DeserializationError::Ok  && root.containsKey("result") )
             {
-                JsonObject& result = root["result"][0];
+                JsonObject result = root["result"][0];
                 if( result.containsKey("Level") )
                 {
                     *value = result["Level"].as<int>();

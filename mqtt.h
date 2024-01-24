@@ -91,7 +91,7 @@ void _MQTTCallback( char* , uint8_t * , unsigned int );
 class MQTTbase {
 
     public:
-        void publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject& values );
+        void publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject values );
 };
 
 //------------------------------------------------------------------------------

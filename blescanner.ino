@@ -16,12 +16,13 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 
       if( advertisedDevice.haveRSSI() )
       {
-          StaticJsonBuffer<1024> jsonBuffer;
+        //   StaticJsonDocument<1024> jsonBuffer;
+          StaticJsonDocument<1024> root;
           String topic;
           String payload;
           //
           topic = String(MQTT_BLESCANTOPIC) + String('/') + esp32devicename + String('/');
-          JsonObject& root = jsonBuffer.createObject();
+        //   JsonObject root = jsonBuffer.createObject();
           String name;
           if( advertisedDevice.haveName() )
           {
@@ -71,7 +72,9 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
           // bacon.setData(advertisedDevice.getManufacturerData().data());
           // rprintf( "Manufacturer: %d major: %d minor: %d\n" , (int)bacon.getManufacturerId() , (int)bacon.getMajor() , (int)bacon.getMinor() );
 
-          root.printTo( payload );
+          //   root.printTo( payload );
+          serializeJson( root , payload );
+
           // payload.replace( "\\r\\n" , "" );
           MQTTPublish( topic , payload , 1 );
           //     rprintf( "MQTTbase::publish::topic: %s payload: %s\n" , topic.c_str() ,  payload.c_str());

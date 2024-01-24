@@ -300,7 +300,7 @@ uint32_t 		rp_lastcrc = 0;
 void rprintf( const char * format, ... )
 {
 int 			obtained = pdTRUE;
-char 			buffer[512];
+char 			buffer[684];
 char 			filtered[64] = "";
 int 			size;
 va_list 		args;
