@@ -103,7 +103,6 @@ void MQTTquerybrokers( bool forcerescan )
 {
 bool prefs;
 int i,brokers;
-// StaticJsonDocument<512> mqttjson;
 StaticJsonDocument<512> array;
 
     // FIXME
@@ -121,9 +120,7 @@ StaticJsonDocument<512> array;
 
         if( MQTTprefs.getBytes("Brokers", jsonbuff , sizeof(jsonbuff)) )
         {
-            // JsonArray& array = mqttjson.parseArray(jsonbuff);
             DeserializationError err = deserializeJson(array,jsonbuff);
-            // if( array.success() && array.size() > 0 )
             if( err == DeserializationError::Ok && array.size() > 0 )
             {
                 rprintf( "Num of stored brokers: %d\n",array.size());
@@ -175,7 +172,6 @@ StaticJsonDocument<512> array;
             rprintf( "!!! ERROR: Unable to restore broker settings!\n");
         }
     }
-    // mqttjson.clear();
     array.clear();
     brokers = MDNSbrowseservice("mqtt", "tcp");
     if( brokers )
@@ -191,7 +187,6 @@ StaticJsonDocument<512> array;
         MQTTprefs.remove( "Brokers" );
         rprintf( "Old brokers deleted...\n" );
 
-        // JsonArray& array = mqttjson.createArray();
         //----------------------------------------------------------------------
         rprintf( "Store brokers...\n" );
         MQTTnumofbrokers = brokers;
@@ -212,7 +207,6 @@ StaticJsonDocument<512> array;
         {
             // Save MQTT brokers to prefs
             String jsonbuff;
-            // array.prettyPrintTo( jsonbuff );
             serializeJsonPretty( array , jsonbuff );
             
             rprintf( "Brokers JSON: %s\n" , jsonbuff.c_str());
@@ -634,9 +628,7 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
             )
             {
                 DEBUG_PRINTF( ">>> MQTT controller target is matched.\n" );
-                // StaticJsonDocument<255> json;
-                // JsonObject root = json.parseObject((const char*)payloadstr);
-                // if( root.success() )
+
                 StaticJsonDocument<255> root;
                 DeserializationError err = deserializeJson(root, (const char*)payload);
                 if( err == DeserializationError::Ok )
@@ -953,15 +945,6 @@ void MQTTend( void )
 }
 
 //------------------------------------------------------------------------------
-
-//  JSON 5.x
-// void jsonmerge(JsonObject dest, JsonObject src) {
-//    for (auto kvp : src)
-//    {
-//        dest[kvp.key] = kvp.value;
-//    }
-// }
-
 // JSON 6.x
 void jsonmerge(JsonObject dest, JsonObjectConst src)
 {
@@ -975,7 +958,6 @@ void jsonmerge(JsonObject dest, JsonObjectConst src)
 
 void MQTTbase::publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject values  )
 {
-// StaticJsonDocument<128> jsonBuffer;
 StaticJsonDocument<128> root;
 String topic;
 String payload;
@@ -984,14 +966,11 @@ String payload;
     // FIXME:  legacy
 
     topic = basetopic + String('/') + device + String('/') + devclass;
-    // JsonObject root = jsonBuffer.createObject();
-    // root = values;
     root["name"] = name;
     root["type"] = type;
 
     jsonmerge( root.as<JsonObject>() , values );
 
-    // root.printTo( payload );
     serializeJson( root , payload );
     // payload.replace( "\\r\\n" , "" );
     MQTTPublish( topic , payload );

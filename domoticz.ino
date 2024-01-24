@@ -162,9 +162,6 @@ char url[256];
             int bodylen = http.getSize();
             rprintf( "HTTP response size: %d\n", bodylen );
 
-            // String payload = http.getString();
-            // JsonObject root = jsonBuffer.parseObject( http.getString() );
-            // if( root.success() && root.containsKey("result") )
             DeserializationError err = deserializeJson(root, http.getString() );
             if( err == DeserializationError::Ok  && root.containsKey("result") )
             {
@@ -252,9 +249,6 @@ char url[256];
             int bodylen = http.getSize();
             rprintf( "HTTP response size: %d\n", bodylen );
 
-            // JsonObject root = jsonBuffer.parseObject(payload);
-            // JsonObject root = jsonBuffer.parseObject( http.getString() );
-            // if( root.success() && root.containsKey("result") )
             DeserializationError err = deserializeJson(root, http.getString() );
             if( err == DeserializationError::Ok  && root.containsKey("result") )
             {
@@ -333,8 +327,6 @@ char url[256];
             int bodylen = http.getSize();
             rprintf( "HTTP response size: %d\n", bodylen );
 
-            // JsonObject root = jsonBuffer.parseObject(http.getString());
-            // if( root.success() && root.containsKey("result") )
             DeserializationError err = deserializeJson(root, http.getString() );
             if( err == DeserializationError::Ok  && root.containsKey("result") )
             {
