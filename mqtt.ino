@@ -444,34 +444,37 @@ void MQTTConnect( const char * node , const char * user , const char * psw )
 
 //------------------------------------------------------------------------------
 
-void _MQTTPublish( const char * topic , const char * msg )
+bool _MQTTPublish( const char * topic , const char * msg , bool retain )
 {
 int obtained = pdTRUE;
+bool success = false;
 
     if( !client.connected() || MQTTpublishfail > 2 || client.state() != MQTT_CONNECTED )
     //if( client.state() != MQTT_CONNECTED )
     {
-        int i=0;
-        do {
-            _MQTTConnect();
-        } while( ++i < MQTTnumofbrokers && client.state() != MQTT_CONNECTED );
+        // int i=0;
+        // do {
+        //     _MQTTConnect();
+        // } while( ++i < MQTTnumofbrokers && client.state() != MQTT_CONNECTED );
+        return false;
     }
 
     if( client.state() == MQTT_CONNECTED )
     {
         if( mutex_mqttpublish != NULL )
         {
-            obtained = xSemaphoreTakeRecursive( mutex_mqttpublish, portMAX_DELAY );
+            if( xSemaphoreTakeRecursive( mutex_mqttpublish, portMAX_DELAY ) != pdTRUE )
+            {
+                return false;
+            }
         }
 
-        if( obtained != pdTRUE )
-            return;
-
-        if( client.publish( topic , msg ) != false )
+        if( client.publish( topic , msg , retain ) != false )
         {
             // rprintf("%d: >>> Publish MQTT topic in: \"%s\" Message: \"%s\"\n", millis() , topic , msg );
-            rprintf("%s: >>> Publish MQTT topic in: \"%s\" Message: \"%s\"\n", timeClient.getFormattedTime().c_str() , topic , msg );
+            rprintf("%s: >>> Publish MQTT topic in: \"%s\" Message: \"%s\" %s\n", timeClient.getFormattedTime().c_str() , topic , msg , retain ? "#Retain: true":"");
             MQTTpublishfail = 0;
+            success = true;
         }
         else
         {
@@ -491,6 +494,9 @@ int obtained = pdTRUE;
         rprintf("MQTT is not connected (state: %d).\n", client.state() );
         MQTTpublishfail++;
     }
+
+    return success;
+
 }
 
 //------------------------------------------------------------------------------
@@ -503,8 +509,9 @@ public:
     time_t  timing;   // Send timing
     String  topic;
     String  payload;
+    bool    retain;
 
-    MQTTqueueitem( const char * msgtopic , const char * msg , time_t delay = 0 )
+    MQTTqueueitem( const char * msgtopic , const char * msg , time_t delay = 0 , bool retain = false )
     {
         timing = (delay == 0) ? 0 : time( NULL ) + delay;
         // rprintf( "QUEUEitem: time:%d delay: %d timing: %d\n" , time( NULL ) , delay , timing );
@@ -519,10 +526,16 @@ public:
 std::vector<MQTTqueueitem*> MQTTqueue;
 
 
-void MQTTPublish( const char * topic , const char * msg , time_t delay )
+void MQTTPublish( const char * topic , const char * msg , time_t delay , bool retain )
 {
+bool success = true;
 
-    if( delay )
+    if( !delay )
+    {
+        success = _MQTTPublish( topic , msg , retain );
+    }
+
+    if( delay || !success )
     {
         // TODO
         //  Create semaphore and catch it before make anytingh with the queue
@@ -533,7 +546,10 @@ void MQTTPublish( const char * topic , const char * msg , time_t delay )
 
         if( mutex_mqttqueue != NULL )
         {
-            xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY );
+            if( xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY ) != pdTRUE )
+            {
+                return;
+            }
         }
 
         for (std::vector<MQTTqueueitem*>::iterator it = MQTTqueue.begin(); it != MQTTqueue.end() ; it++ )
@@ -547,7 +563,7 @@ void MQTTPublish( const char * topic , const char * msg , time_t delay )
             }
         }
 
-        MQTTqueueitem * message = new MQTTqueueitem( topic , msg , delay );
+        MQTTqueueitem * message = new MQTTqueueitem( topic , msg , delay , retain );
         // Create delayed topic
         MQTTqueue.push_back( message );
 
@@ -556,10 +572,6 @@ void MQTTPublish( const char * topic , const char * msg , time_t delay )
             xSemaphoreGiveRecursive( mutex_mqttqueue );
         }
     }
-    else
-    {
-        _MQTTPublish( topic , msg );
-    }
 
 }
 
@@ -567,6 +579,12 @@ void MQTTPublish( String topic , String msg , time_t delay )
 {
     MQTTPublish( topic.c_str() , msg.c_str() , delay );
 }
+
+void MQTTPublish( String topic , String msg , bool retain )
+{
+    MQTTPublish( topic.c_str() , msg.c_str() , 0 , retain );
+}
+
 
 // int strcicmp(char const *a, char const *b)
 // {
@@ -590,7 +608,7 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
     if( topicmatch || numofMQTTcallbackitems )
     {
         char payloadstr[256];
-        int i = length > sizeof(payloadstr)-1 ? sizeof(payloadstr)-1: length ;
+        int i = length > sizeof(payloadstr)-1 ? sizeof(payloadstr)-1: length;
         if( length > sizeof(payloadstr)-1 )
         {
             rprintf( "!!! WARNING: Payload is to long: %d!\n" , length );
@@ -811,7 +829,7 @@ void _MQTTloopthread( void * params )
 
             if( mqttloopthreadcount%(2400) == 0 )
             {
-                rprintf("%s: MQTT loop thread running on core: %d MQTT server: %s:%u Queue items: %d\n" , timeClient.getFormattedTime().c_str() , xPortGetCoreID() , MQTTserver.c_str() , (unsigned int)MQTTserverport , MQTTqueue.size() );
+                rprintf("%s: MQTT loop thread running on core: %d MQTT server: %s:%u Queue items: %d staksize: %d\n" , timeClient.getFormattedTime().c_str() , xPortGetCoreID() , MQTTserver.c_str() , (unsigned int)MQTTserverport , MQTTqueue.size() , getstacksize() );
                 if( MQTTconnectionfail )
                 {
                     rprintf("%s: MQTT connection fail: %d\n" , timeClient.getFormattedTime().c_str() , MQTTconnectionfail );
@@ -820,7 +838,10 @@ void _MQTTloopthread( void * params )
 
             if( mutex_mqttqueue != NULL )
             {
-                xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY );
+                if( xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY ) != pdTRUE )
+                {
+                    continue;
+                }
             }
 
             for (std::vector<MQTTqueueitem*>::iterator it = MQTTqueue.begin(); it != MQTTqueue.end() ; )
@@ -829,12 +850,14 @@ void _MQTTloopthread( void * params )
                 {
                     // rprintf( "QUEUEitem: time:%d timing: %d\n" , time( NULL ) , (*it)->timing );
                     //  Publish the topic
-                    _MQTTPublish( (*it)->topic.c_str() , (*it)->payload.c_str() );
+                    if( _MQTTPublish( (*it)->topic.c_str() , (*it)->payload.c_str() , (*it)->retain ) )
+                    {
+                        // rprintf("_MQTTloopthread::delete item\n" );
+                        delete *it;
+                        // rprintf("_MQTTloopthread::delete vector item\n" );
+                        it = MQTTqueue.erase( it );
+                    }
                     client.loop();
-                    // rprintf("_MQTTloopthread::delete item\n" );
-                    delete *it;
-                    // rprintf("_MQTTloopthread::delete vector item\n" );
-                    it = MQTTqueue.erase( it );
                 }
                 else
                 {
@@ -900,7 +923,7 @@ void _MQTTloopinit( void )
         xTaskCreate(
             _MQTTloopthread,         /* pvTaskCode */
             "MQTT loop",             /* pcName */
-            4000,                   /* usStackDepth */
+            5000,                   /* usStackDepth */
             NULL,                   /* pvParameters */
             0,                      /* uxPriority */
             &pxMQTTloopthread        /* pxCreatedTask */
@@ -936,6 +959,9 @@ StaticJsonBuffer<128> jsonBuffer;
 String topic;
 String payload;
 
+    // -------------------------------------------------------------------------
+    // FIXME:  legacy
+
     topic = basetopic + String('/') + device + String('/') + devclass;
     JsonObject& root = jsonBuffer.createObject();
     root["name"] = name;
@@ -944,5 +970,8 @@ String payload;
     root.printTo( payload );
     // payload.replace( "\\r\\n" , "" );
     MQTTPublish( topic , payload );
-    rprintf( "%s: MQTTbase::publish::topic: %s payload: %s\n" , timeClient.getFormattedTime().c_str() , topic.c_str() ,  payload.c_str());
+    // rprintf( "%s: MQTTbase::publish::topic: %s payload: %s\n" , timeClient.getFormattedTime().c_str() , topic.c_str() ,  payload.c_str());
+    // -------------------------------------------------------------------------
+    
 }
+

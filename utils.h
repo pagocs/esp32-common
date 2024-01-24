@@ -11,10 +11,12 @@
 #endif // DEBUG_PRINTF
 #define DEBUG_MODE() SYSTEMdebug
 
-#ifdef DEBUG_PRINTF
-#undef DEBUG_PRINTF
-//#define DEBUG_PRINTF(f_, ...)
+#ifndef DEBUG_PRINTF
+// #undef DEBUG_PRINTF
+#define DEBUG_PRINTF(f_, ...)
 #endif //DEBUG_PRINTF
+
+#define UTILS_INFINITELOOP -333
 
 bool SYSTEMdebug = false;
 
@@ -36,6 +38,7 @@ extern bool    MDNSinited;
 char * strcasestr(const char *, const char *);
 void rprintf( const char *, ... );
 String getMacAddress( bool compact = false );
+String getIPAddress( void );
 void remoteprintinit( void );
 void setdebugmode( bool );
 String getMacAddress( bool );
@@ -57,8 +60,13 @@ void registerprerestart( reatartprolog_t onrestart );
 void restart( void );
 void prerestart( void );
 bool numtobool( int );
+size_t getstacksize( bool show = true );
+void utilsresetloop( int count = -1 );
+
 //------------------------------------------------------------------------------
-//  This is for backward compatibility for earlier projects
+// This is for backward compatibility for earlier projects
+// The folowing DSTime code is based on the original arduiono iplementation
+// https://github.com/arduino-libraries/NTPClient
 
 #include <time.h>
 // #include <NTPClient.h>

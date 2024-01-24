@@ -6,6 +6,8 @@
 #include "esp_system.h"
 #include <utils.h>
 #include <wificonnect.h>
+#include <ota.h>
+#include <Arduino_CRC32.h>
 
 //------------------------------------------------------------------------------
 
@@ -73,12 +75,13 @@ bool numtobool( int value )
 // //#define NTP_ADDRESS  "0.pool.ntp.org"
 // #define NTP_ADDRESS  "pool.ntp.org"
  // TODO remove this!!!
+bool			bootloopcheck = true;
 unsigned long   ntplastsync = 0;
 
 // WiFiUDP 	ntpUDP;
 // NTPClient 	timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 
-DSTTime		timeClient( 1 * 3600, 3600, "pool.ntp.org" , "0.uk.pool.ntp.org", "time.nist.gov" );
+DSTTime		timeClient( 1 * 3600, 3600, "hu.pool.ntp.org", "pool.ntp.org", "time.cloudflare.com" );
 
 //------------------------------------------------------------------------------
 // https://github.com/espressif/arduino-esp32/blob/master/libraries/Preferences/src/Preferences.cpp
@@ -111,6 +114,38 @@ const char *formatstr;
 	return String(baseMacChr);
 }
 
+String getIPAddress( void )
+{
+	return WiFi.localIP().toString();
+}
+
+//------------------------------------------------------------------------------
+//
+
+void utilsresetloop( int count )
+{
+	bool infineite = false;
+	// If count is negative that means infinite
+
+	if( count == UTILS_INFINITELOOP )
+	{
+		infineite = true;
+	}
+
+	// Disable the loop reset the boot loop counter
+	bootloopcheck = false;
+
+	while( infineite == true || count-- < 0 )
+	{
+		WifiConnect();
+		OTAHandle();
+		utilsloop();
+		delay( 150 );
+	}
+	ESP.restart();
+
+}
+
 //------------------------------------------------------------------------------
 
 void utilsinit( void )
@@ -131,6 +166,54 @@ void utilsinit( void )
 	timeClient.update();
 
 	devicebooted = timeClient.getFormattedTime();
+
+	//--------------------------------------------------------------------------
+	// Bootloop detection
+
+	getstacksize();
+
+	Preferences savedprefs;
+	unsigned int bootcount = 0;
+
+	if( savedprefs.begin("Prefs", false) )
+	{
+		bootcount = savedprefs.getUChar( "rebootcount", 0 );
+		savedprefs.putUChar( "rebootcount" , bootcount+1 );
+
+		rprintf( ">>> Reboot count is: %d\n" , bootcount );
+	}
+
+	if( bootcount > 5 )
+	{
+		char devicename[32];
+		rprintf( "!!! ERROR: Bootloop detected. Enter emergency OTA state!\n");
+
+		sprintf( devicename , "emergency-%s" , getMacAddress( true ).c_str());
+		OTAinit( 3232 , devicename );
+
+		// Reset the reboot count to give a chance for the update....
+		savedprefs.putUChar( "rebootcount" , 0 );
+		savedprefs.end();
+
+		// // Disable the loop reset the boot loop counter
+		// bootloopcheck = false;
+		//
+		// while( true )
+		// {
+		// 	WifiConnect();
+		// 	OTAHandle();
+		// 	utilsloop();
+		// 	delay( 500 );
+		// }
+		// ESP.restart();
+
+		utilsresetloop( UTILS_INFINITELOOP );
+
+	}
+
+	savedprefs.end();
+
+	//--------------------------------------------------------------------------
 
 	initwatchdog();
 }
@@ -209,13 +292,20 @@ void remoteprintinit( void )
 
 }
 
+//------------------------------------------------------------------------------
+
+unsigned int 	rp_filteredlines = 0;
+uint32_t 		rp_lastcrc = 0;
+
 void rprintf( const char * format, ... )
 {
-int obtained = pdTRUE;
+int 			obtained = pdTRUE;
+char 			buffer[512];
+char 			filtered[64] = "";
+int 			size;
+va_list 		args;
+Arduino_CRC32 	crc32;
 
-	char buffer[512];
-	int size;
-	va_list args;
 	va_start(args, format);
 
 	size = vsnprintf(buffer,sizeof(buffer),format, args);
@@ -228,14 +318,44 @@ int obtained = pdTRUE;
 			return;
 	}
 
-	if(rprintinited && debugclient && debugclient.connected() )
+	// Filter the duplicated lines
+	uint32_t const crc = crc32.calc((uint8_t const *)buffer , size );
+
+	if( rp_lastcrc == 0 || crc != rp_lastcrc )
 	{
-		debugclient.printf(buffer);
+		bool filteredmsg = false;
+		// Create filtered line text...
+		if( rp_filteredlines )
+		{
+			sprintf( filtered , "... %d same line(s) was filtered\n" , rp_filteredlines );
+			filteredmsg = true;
+		}
+
+		rp_filteredlines = 0;
+		rp_lastcrc = crc;
+
+		if(rprintinited && debugclient && debugclient.connected() )
+		{
+			if( filteredmsg )
+			{
+				debugclient.printf(filtered);
+			}
+			debugclient.printf(buffer);
+		}
+		else
+		{
+			if( filteredmsg )
+			{
+				debugclient.printf(filtered);
+			}
+			Serial.printf( buffer );
+		}
 	}
 	else
 	{
-		Serial.printf( buffer );
+		rp_filteredlines++;
 	}
+
     if( size > sizeof(buffer) )
     {
         Serial.printf("\n!!! WARNING: Buffer is shorter than necessary, output is truncated.\n");
@@ -365,6 +485,7 @@ void feedwatchdog( void )
 
 void utilsloop( void )
 {
+
 	remoteprintloop();
 	feedwatchdog();
 	if( ( millis() - ntplastsync ) > 86000000 )
@@ -374,6 +495,31 @@ void utilsloop( void )
 		timeClient.update();
 	}
 
+	//--------------------------------------------------------------------------
+	//  Clear the reboot counter if still running
+	if( ( millis() - ntplastsync ) > 60000 && bootloopcheck )
+	{
+		// clear boot count
+		bootloopcheck = false;
+		Preferences savedprefs;
+		unsigned int bootcount = 0;
+
+		rprintf( "\n\n>>> Checking the reboot counter...\n\n" );
+
+		if( savedprefs.begin("Prefs", false) )
+		{
+			bootcount = savedprefs.getUChar( "rebootcount", 0 );
+			if ( bootcount > 0 )
+			{
+				if( bootcount > 1 )
+				{
+					rprintf( "!!! NOTICE: Reset the reboot counter!\n" );
+				}
+				savedprefs.putUChar( "rebootcount" , 0 );
+			}
+			savedprefs.end();
+		}
+	}
 }
 
 //------------------------------------------------------------------------------
@@ -489,5 +635,31 @@ struct MDNShost * MDNSgethost( int idx )
 
 	return host;
 }
+
+size_t getstacksize( bool show )
+{
+
+void * StackPtrAtStart;
+void * StackPtrEnd;
+UBaseType_t watermarkStart;
+void* SpStart = NULL;
+size_t stacksize;
+void* SpActual = NULL;
+
+
+	StackPtrAtStart = (void *)&SpStart;
+	watermarkStart =  uxTaskGetStackHighWaterMark(NULL);
+	StackPtrEnd = StackPtrAtStart - watermarkStart;
+
+	stacksize = (uint32_t)&SpActual - (uint32_t)StackPtrEnd;
+
+	if( show )
+	{
+		Serial.printf("\n>>> Free Stack at actual position is: %d \r\n", stacksize );
+	}
+
+	return stacksize;
+}
+
 
 // #endif // _UTILS
