@@ -134,7 +134,7 @@ void updatedomoticz_temp( const char * domo ,  int idx , float temp , float hum 
 
 unsigned int _getdomoticz_temp( const char * domo ,  int idx , float * temp , float * humidity )
 {
-DynamicJsonDocument root(1700);
+JsonDocument root;
 HTTPClient http;
 char url[256];
 
@@ -218,7 +218,7 @@ unsigned int _getdomoticz_temp( const char * domo ,  int idx , float &temp , flo
 
 unsigned int getdomoticz_counter( const char * domo ,  int idx , float * value , float * todayvalue )
 {
-DynamicJsonDocument root(1700);
+JsonDocument root;
 HTTPClient http;
 char url[256];
 
@@ -299,7 +299,7 @@ char url[256];
 
 unsigned int getdomoticz_selector( const char * domo ,  int idx , int * value )
 {
-DynamicJsonDocument root(1700);
+JsonDocument root;
 HTTPClient http;
 char url[256];
 

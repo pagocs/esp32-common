@@ -101,9 +101,10 @@ Preferences prefs;
 
 void MQTTquerybrokers( bool forcerescan )
 {
+JsonDocument    array;
+
 bool prefs;
 int i,brokers;
-StaticJsonDocument<512> array;
 
     // FIXME
     // Currently there is an bug in the SDK about the MDNS.queryService which is cause
@@ -196,7 +197,7 @@ StaticJsonDocument<512> array;
             // Store in prefs
             if( prefs )
             {
-                JsonObject nested = array.createNestedObject();
+                JsonObject nested = array.add<JsonObject>();
                 nested["hostname"] = MQTTbrokers[i]->hostname;
                 rprintf( "IP: %s\n", MQTTbrokers[i]->ip.toString().c_str());
                 nested["ip"] = (char *)MQTTbrokers[i]->ip.toString().c_str();
@@ -629,7 +630,7 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
             {
                 DEBUG_PRINTF( ">>> MQTT controller target is matched.\n" );
 
-                StaticJsonDocument<255> root;
+                JsonDocument    root;
                 DeserializationError err = deserializeJson(root, (const char*)payload);
                 if( err == DeserializationError::Ok )
                 {
@@ -958,7 +959,7 @@ void jsonmerge(JsonObject dest, JsonObjectConst src)
 
 void MQTTbase::publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject values  )
 {
-StaticJsonDocument<128> root;
+JsonDocument    root;
 String topic;
 String payload;
 

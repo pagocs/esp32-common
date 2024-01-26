@@ -16,7 +16,7 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
 
       if( advertisedDevice.haveRSSI() )
       {
-          StaticJsonDocument<1024> root;
+          JsonDocument  root;
           String topic;
           String payload;
           //
