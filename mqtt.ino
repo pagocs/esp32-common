@@ -599,7 +599,8 @@ void MQTTPublish( String topic , String msg , bool retain )
 
 bool MQTTtopicmatch( const char * topic , const char * matchtopic )
 {
-    int len = std::min( strlen(topic) , strlen(matchtopic));
+    // Last character is #
+    int len = std::min( strlen(topic) , strlen(matchtopic)) - 1 ;
     //rprintf( ">>> MQTT matchtopic: [%s]:[%s]=%d\n" , topic , matchtopic,strncasecmp( topic , matchtopic , len ));
     return strncasecmp( topic , matchtopic , len ) == 0 ? true : false;
 }
@@ -609,6 +610,7 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
     bool topicmatch = MQTTtopicmatch( topic , MQTT_CONTROLLERCOMMANDS );
     if( topicmatch || numofMQTTcallbackitems )
     {
+        rprintf(  "-->> Topic received: %s\n" , topic );
         char payloadstr[256];
         int i = length > sizeof(payloadstr)-1 ? sizeof(payloadstr)-1: length;
         if( length > sizeof(payloadstr)-1 )
@@ -617,7 +619,6 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
         }
         memcpy( payloadstr , payload , i );
         payloadstr[i] = 0;
-
 
         if( topicmatch )
         {
@@ -722,11 +723,12 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
             int i;
             for( i = 0 ; i < numofMQTTcallbackitems ; i++ )
             {
-                //rprintf( "--- MQTT registered topic: %s\n" , MQTTcallbacks[i].topic );
+                // rprintf( "--- MQTT registered topic: %s\n" , MQTTcallbacks[i].topic );
                 if( MQTTtopicmatch( topic , MQTTcallbacks[i].topic ) ||
                     MQTTcallbacks[i].alltopics == true
                 )
                 {
+                    // rprintf( "--- MQTT call callback\n" );
                     // WARNING: the payloadstr is 0 terminated!
                     (*MQTTcallbacks[i].func)( topic , (uint8_t *)payloadstr , length );
                 }
@@ -741,6 +743,25 @@ void MQTTSubscribe( MQTTCallback callback )
     MQTTcontrollertopiccallback=callback;
 }
 
+void MQTTSubscribe( String topic , MQTTCallback callback )
+{
+    // If using Stirng then must create a copy
+
+    unsigned int length = topic.length() + 1;
+    char * cstr = (char *)malloc( length );
+    if( cstr != NULL  )
+    {
+        topic.toCharArray( cstr , length );
+        cstr[length] = 0;
+    }
+    else
+    {
+        rprintf( "!!! ERROR: Unapbel to allovate memory for mqtt subscribe!\n" );       
+    }
+
+    MQTTSubscribe( cstr , callback );
+}
+
 // Subscribe callback function to topic
 // It ccould be use # for get all topics
 // Or specific topic: in this case the different callbacks
@@ -748,6 +769,7 @@ void MQTTSubscribe( MQTTCallback callback )
 // is received.
 void MQTTSubscribe( const char * topic , MQTTCallback callback )
 {
+    // FIXME: refactor this tu using std::vector
     int idx;
     idx = numofMQTTcallbackitems;
 
@@ -780,6 +802,8 @@ void MQTTSubscribe( const char * topic , MQTTCallback callback )
     MQTTcallbacks[idx].func =  callback;
     MQTTcallbacks[idx].alltopics = strcmp( topic , "#" ) == 0 ? true : false;
     client.subscribe(topic);
+    rprintf( "--->>> Registered topic: %s\n" , topic );
+
 }
 
 //------------------------------------------------------------------------------

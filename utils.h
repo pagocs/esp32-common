@@ -35,7 +35,9 @@ extern bool    MDNSinited;
 //------------------------------------------------------------------------------
 // prototypes
 
-char * strcasestr(const char *, const char *);
+char * strca1sestr(const char *, const char *);
+int StringSplit(String sInput, char cDelim, String sParams[], int iMaxParams );
+boolean isint( String value );
 void rprintf( const char *, ... );
 String getMacAddress( bool compact = false );
 String getIPAddress( void );
@@ -62,6 +64,31 @@ void prerestart( void );
 bool numtobool( int );
 size_t getstacksize( bool show = true );
 void utilsresetloop( int count = -1 );
+
+//----------------------------------------------------------------------
+// Source: https://stackoverflow.com/questions/650162/why-cant-the-switch-statement-be-applied-to-strings/46711735#46711735
+// Use this hash function for string based switch case construction:
+// switch( hash(str) ){
+// case hash("one") : // do something
+// case hash("two") : // do something
+// }
+// 
+// In C++14 and C++17 you can use following hash function:
+// Also C++17 have std::string_view, so you can use it instead of const char *.
+// In C++20, you can try using consteval.
+// constexpr uint32_t hash(const char* data, size_t const size) noexcept{
+//     uint32_t hash = 5381;
+
+//     for(const char *c = data; c < data + size; ++c)
+//         hash = ((hash << 5) + hash) + (unsigned char) *c;
+
+//     return hash;
+// }
+
+// C++11
+constexpr unsigned int hash(const char *s, int off = 0) {                        
+    return !s[off] ? 5381 : (hash(s, off+1)*33) ^ s[off];                           
+}    
 
 //------------------------------------------------------------------------------
 // This is for backward compatibility for earlier projects

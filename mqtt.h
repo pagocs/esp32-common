@@ -113,6 +113,7 @@ void MQTTSubscribe( MQTTCallback );
 // is called just when that specific topic (or partially match from the begining)
 // is received.
 void MQTTSubscribe( const char * , MQTTCallback );
+void MQTTSubscribe( String , MQTTCallback  );
 // Call this function in main loop
 void MQTTLoop( void );
 void MQTTend( void );

@@ -44,6 +44,83 @@ bool numtobool( int value )
 	return (value == 0 ) ? false : true;
 }
 
+
+// RelayDevices::handlecommand: myesp32/esp32-A4CF129A4760/relay/3/settings::On
+// 19:05:05.122 -> StringSplit::iposdelim: 0::7
+// 19:05:05.122 -> StringSplit::piece: myesp3
+// 19:05:05.122 -> StringSplit::iposdelim: 8::26
+// 19:05:05.122 -> StringSplit::piece: esp32-A4CF129A476
+// 19:05:05.122 -> StringSplit::iposdelim: 27::32
+// 19:05:05.122 -> StringSplit::piece: rela
+// 19:05:05.122 -> StringSplit::iposdelim: 33::34
+// 19:05:05.122 -> StringSplit::iposdelim: 35::-1
+// 19:05:05.122 -> StringSplit::return iParamCount 4
+// 19:05:05.155 -> RelayDevices::handlecommand:stringsplit: 4
+// 19:05:05.155 -> RelayDevices::handlecommand:topicpiece[3]: myesp
+//         *                 *     * *
+// 012345678901234567890123456789012345678
+// myesp32/esp32-A4CF129A4760/relay/3/
+
+//----------------------------------------------------------------------
+// Based on:
+// https://arduino.stackexchange.com/questions/1013/how-do-i-split-an-incoming-string
+
+int StringSplit(String sInput, char cDelim, String sParams[], int iMaxParams )
+{
+    int iParamCount = 0;
+    int iPosDelim, iPosStart = 0;
+	int length = sInput.length();
+
+    do 
+	{
+        // Searching the delimiter using indexOf()
+        iPosDelim = sInput.indexOf(cDelim,iPosStart);
+		// rprintf( "StringSplit::iposdelim: %d::%d::%d\n" , iPosStart , iPosDelim , sInput.length() );
+
+        if( (iPosDelim > iPosStart || iPosDelim < 0 ) &&
+			iPosStart < length &&
+			iParamCount < iMaxParams
+		)
+		{
+            // Adding a new parameter using substring() 
+			sParams[iParamCount++] = sInput.substring(iPosStart, iPosDelim == -1 ? length : iPosDelim );
+			// rprintf( "StringSplit::piece: %s\n" , sInput.substring(iPosStart,iPosDelim).c_str() );
+        }
+        iPosStart = iPosDelim + 1;
+
+    } while (iPosDelim >= 0 && iParamCount < iMaxParams );
+
+	// rprintf( "StringSplit::return iParamCount %d\n" , iParamCount );
+    return iParamCount;
+}
+
+//----------------------------------------------------------------------
+
+boolean isint( String value )
+{
+int	len = value.length();
+ 
+    if (len == 0)
+        return false;
+  
+    for( int i = 0 ; i < len ; ++i )
+	{
+        if( !isDigit( value.charAt(i) ) )
+	        return false;
+	}
+    return true;
+}
+
+
+// int strcicmp(char const *a, char const *b)
+// {
+//     for (;; a++, b++) {
+//         int d = tolower(*a) - tolower(*b);
+//         if (d != 0 || !*a)
+//             return d;
+//     }
+// }
+
 //----------------------------------------------------------------------
 /* Time Stamp */
 
