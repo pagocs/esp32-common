@@ -14,9 +14,6 @@
 // MQTT
 // #include <PubSubClient.h>
 
-// FIXME:
-// Fix this to use relative path
-//#include "/Users/pagocs/Documents/Arduino/projects/common/utils.ino"
 #include <utils.h>
 #include <mqtt.h>
 
@@ -26,8 +23,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 bool MQTTinited = false;
 int numofMQTTcallbackitems = 0;
-int _MQTTcallbacks = 0;
-struct MQTTcallbackitem *MQTTcallbacks;
+std::vector<MQTTcallbackitem *> MQTTcallbacks;
 const char *MQTTnode = NULL;
 const char *MQTTuser = NULL;
 const char *MQTTpassword = NULL;
@@ -384,10 +380,13 @@ bool    connected = false;
             if( numofMQTTcallbackitems )
             {
                 client.setCallback(_MQTTCallback);
-                for( i = 0 ; i < numofMQTTcallbackitems ; i++ )
+                std::vector<MQTTcallbackitem *>::iterator it = MQTTcallbacks.begin();
+                
+                while (it != MQTTcallbacks.end())
                 {
-                    rprintf("--- Subscribe to topic: %s\n" , MQTTcallbacks[i].topic );
-                    client.subscribe( MQTTcallbacks[i].topic );
+                    rprintf("--- Subscribe to topic: %s\n" , (*it)->topic );
+                    client.subscribe( (*it)->topic );    
+                    it++;                
                 }
             }
             connected = true;
@@ -587,16 +586,6 @@ void MQTTPublish( String topic , String msg , bool retain )
     MQTTPublish( topic.c_str() , msg.c_str() , 0 , retain );
 }
 
-
-// int strcicmp(char const *a, char const *b)
-// {
-//     for (;; a++, b++) {
-//         int d = tolower(*a) - tolower(*b);
-//         if (d != 0 || !*a)
-//             return d;
-//     }
-// }
-
 bool MQTTtopicmatch( const char * topic , const char * matchtopic )
 {
     // Last character is #
@@ -718,20 +707,20 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
                 }
             }
         }
-        else if( numofMQTTcallbackitems )
+        else if(  numofMQTTcallbackitems )
         {
-            int i;
-            for( i = 0 ; i < numofMQTTcallbackitems ; i++ )
+            std::vector<MQTTcallbackitem *>::iterator it = MQTTcallbacks.begin();
+            while (it != MQTTcallbacks.end())
             {
-                // rprintf( "--- MQTT registered topic: %s\n" , MQTTcallbacks[i].topic );
-                if( MQTTtopicmatch( topic , MQTTcallbacks[i].topic ) ||
-                    MQTTcallbacks[i].alltopics == true
+                if( MQTTtopicmatch( topic , (*it)->topic ) ||
+                    (*it)->alltopics == true
                 )
                 {
                     // rprintf( "--- MQTT call callback\n" );
                     // WARNING: the payloadstr is 0 terminated!
-                    (*MQTTcallbacks[i].func)( topic , (uint8_t *)payloadstr , length );
+                    (*(*it)->func)( topic , (uint8_t *)payloadstr , length );
                 }
+                it++;                
             }
         }
     }
@@ -756,7 +745,7 @@ void MQTTSubscribe( String topic , MQTTCallback callback )
     }
     else
     {
-        rprintf( "!!! ERROR: Unapbel to allovate memory for mqtt subscribe!\n" );       
+        rprintf( "!!! ERROR: Unable to allocate memory for mqtt subscribe!\n" );       
     }
 
     MQTTSubscribe( cstr , callback );
@@ -769,73 +758,31 @@ void MQTTSubscribe( String topic , MQTTCallback callback )
 // is received.
 void MQTTSubscribe( const char * topic , MQTTCallback callback )
 {
-    // FIXME: refactor this tu using std::vector
-    int idx;
-    idx = numofMQTTcallbackitems;
-
-    if( !numofMQTTcallbackitems )
-    {
-        rprintf( "--- Register MQTT generic topic callback\n" );
-        MQTTcallbacks = new struct MQTTcallbackitem;
-        _MQTTcallbacks = 1;
-        //client.setCallback(_MQTTCallback);
-    }
-    else
-    {
-        // realloc the vector
-        if( (numofMQTTcallbackitems+1) >= _MQTTcallbacks )
-        {
-            int i = _MQTTcallbacks+2;
-            struct MQTTcallbackitem *p;
-
-            p = new struct MQTTcallbackitem [i];
-            memset( p , 0 , sizeof(struct MQTTcallbackitem)*i );
-            memcpy( p , MQTTcallbacks , sizeof(struct MQTTcallbackitem)*_MQTTcallbacks );
-            delete MQTTcallbacks;
-            MQTTcallbacks = p;
-            _MQTTcallbacks = i;
-        }
-    }
-    numofMQTTcallbackitems++;
-
-    MQTTcallbacks[idx].topic = topic;
-    MQTTcallbacks[idx].func =  callback;
-    MQTTcallbacks[idx].alltopics = strcmp( topic , "#" ) == 0 ? true : false;
+    MQTTcallbackitem * newitem = new struct MQTTcallbackitem;
+    newitem->topic = topic;
+    newitem->func =  callback;
+    newitem->alltopics = strcmp( topic , "#" ) == 0 ? true : false;
+    MQTTcallbacks.push_back(newitem);
     client.subscribe(topic);
     rprintf( "--->>> Registered topic: %s\n" , topic );
+    numofMQTTcallbackitems++;
 
 }
 
 //------------------------------------------------------------------------------
 
 // FIXME: This function is obsolote
-// unsigned int MQTTlooptimer = 0;
-// Call this function in main loop
 void MQTTLoop( void )
 {
-
-    // TODO: remove the obsolote loop calling function
-    // return;
-
-    // if( MQTTinited )
-    // {
-    //     if( !client.connected() )
-    //     {
-    //         _MQTTConnect();
-    //     }
-    //     unsigned long u = millis();
-    //     if( abs(u - MQTTlooptimer) > 100)
-    //     {
-    //         client.loop();
-    //         MQTTlooptimer = u;
-    //     }
-    // }
 }
 
-unsigned long mqttloopthreadcount = 1;
+//------------------------------------------------------------------------------
+
 
 void _MQTTloopthread( void * params )
 {
+
+static unsigned long mqttloopthreadcount = 1;
 
     rprintf("%s: MQTT loop running on core: %d\n" , timeClient.getFormattedTime().c_str() , xPortGetCoreID() );
     while( true )
