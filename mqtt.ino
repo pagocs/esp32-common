@@ -14,9 +14,6 @@
 // MQTT
 // #include <PubSubClient.h>
 
-// FIXME:
-// Fix this to use relative path
-//#include "/Users/pagocs/Documents/Arduino/projects/common/utils.ino"
 #include <utils.h>
 #include <mqtt.h>
 
@@ -26,8 +23,7 @@ WiFiClient espClient;
 PubSubClient client(espClient);
 bool MQTTinited = false;
 int numofMQTTcallbackitems = 0;
-int _MQTTcallbacks = 0;
-struct MQTTcallbackitem *MQTTcallbacks;
+std::vector<MQTTcallbackitem *> MQTTcallbacks;
 const char *MQTTnode = NULL;
 const char *MQTTuser = NULL;
 const char *MQTTpassword = NULL;
@@ -101,9 +97,10 @@ Preferences prefs;
 
 void MQTTquerybrokers( bool forcerescan )
 {
+JsonDocument    array;
+
 bool prefs;
 int i,brokers;
-StaticJsonBuffer<512> mqttjson;
 
     // FIXME
     // Currently there is an bug in the SDK about the MDNS.queryService which is cause
@@ -120,8 +117,8 @@ StaticJsonBuffer<512> mqttjson;
 
         if( MQTTprefs.getBytes("Brokers", jsonbuff , sizeof(jsonbuff)) )
         {
-            JsonArray& array = mqttjson.parseArray(jsonbuff);
-            if( array.success() && array.size() > 0 )
+            DeserializationError err = deserializeJson(array,jsonbuff);
+            if( err == DeserializationError::Ok && array.size() > 0 )
             {
                 rprintf( "Num of stored brokers: %d\n",array.size());
                 // for (auto value : arr) {
@@ -132,14 +129,14 @@ StaticJsonBuffer<512> mqttjson;
                 for( i = 0 ; i < MQTTnumofbrokers ; i++ )
                 {
                     rprintf( "Add broker: host: %s ip: %s:%u \n" ,
-                        array[i]["hostname"].as<char *>(),
-                        array[i]["ip"].as<char *>(),
+                        array[i]["hostname"].as<const char *>(),
+                        array[i]["ip"].as<const char *>(),
                         array[i]["port"].as<unsigned int>()
                     );
                     MQTTbrokers[i] = new struct MDNShost;
                     MQTTbrokers[i]->hostname = array[i]["hostname"].as<String>();
                     IPAddress ip;
-                    ip.fromString( array[i]["ip"].as<char *>() );
+                    ip.fromString( array[i]["ip"].as<const char *>() );
                     MQTTbrokers[i]->ip = ip;
                     MQTTbrokers[i]->port = array[i]["port"].as<unsigned int>();
                 }
@@ -172,7 +169,7 @@ StaticJsonBuffer<512> mqttjson;
             rprintf( "!!! ERROR: Unable to restore broker settings!\n");
         }
     }
-    mqttjson.clear();
+    array.clear();
     brokers = MDNSbrowseservice("mqtt", "tcp");
     if( brokers )
     {
@@ -186,7 +183,7 @@ StaticJsonBuffer<512> mqttjson;
         //MQTTprefs.clear();
         MQTTprefs.remove( "Brokers" );
         rprintf( "Old brokers deleted...\n" );
-        JsonArray& array = mqttjson.createArray();
+
         //----------------------------------------------------------------------
         rprintf( "Store brokers...\n" );
         MQTTnumofbrokers = brokers;
@@ -196,7 +193,7 @@ StaticJsonBuffer<512> mqttjson;
             // Store in prefs
             if( prefs )
             {
-                JsonObject& nested = array.createNestedObject();
+                JsonObject nested = array.add<JsonObject>();
                 nested["hostname"] = MQTTbrokers[i]->hostname;
                 rprintf( "IP: %s\n", MQTTbrokers[i]->ip.toString().c_str());
                 nested["ip"] = (char *)MQTTbrokers[i]->ip.toString().c_str();
@@ -207,7 +204,8 @@ StaticJsonBuffer<512> mqttjson;
         {
             // Save MQTT brokers to prefs
             String jsonbuff;
-            array.prettyPrintTo( jsonbuff );
+            serializeJsonPretty( array , jsonbuff );
+            
             rprintf( "Brokers JSON: %s\n" , jsonbuff.c_str());
             // DEBUG_PRINTF( "Brokers JSON: %s\n" , jsonbuff.c_str());
             rprintf( "Store presets...\n" );
@@ -382,10 +380,13 @@ bool    connected = false;
             if( numofMQTTcallbackitems )
             {
                 client.setCallback(_MQTTCallback);
-                for( i = 0 ; i < numofMQTTcallbackitems ; i++ )
+                std::vector<MQTTcallbackitem *>::iterator it = MQTTcallbacks.begin();
+                
+                while (it != MQTTcallbacks.end())
                 {
-                    rprintf("--- Subscribe to topic: %s\n" , MQTTcallbacks[i].topic );
-                    client.subscribe( MQTTcallbacks[i].topic );
+                    rprintf("--- Subscribe to topic: %s\n" , (*it)->topic );
+                    client.subscribe( (*it)->topic );    
+                    it++;                
                 }
             }
             connected = true;
@@ -444,34 +445,37 @@ void MQTTConnect( const char * node , const char * user , const char * psw )
 
 //------------------------------------------------------------------------------
 
-void _MQTTPublish( const char * topic , const char * msg )
+bool _MQTTPublish( const char * topic , const char * msg , bool retain )
 {
 int obtained = pdTRUE;
+bool success = false;
 
     if( !client.connected() || MQTTpublishfail > 2 || client.state() != MQTT_CONNECTED )
     //if( client.state() != MQTT_CONNECTED )
     {
-        int i=0;
-        do {
-            _MQTTConnect();
-        } while( ++i < MQTTnumofbrokers && client.state() != MQTT_CONNECTED );
+        // int i=0;
+        // do {
+        //     _MQTTConnect();
+        // } while( ++i < MQTTnumofbrokers && client.state() != MQTT_CONNECTED );
+        return false;
     }
 
     if( client.state() == MQTT_CONNECTED )
     {
         if( mutex_mqttpublish != NULL )
         {
-            obtained = xSemaphoreTakeRecursive( mutex_mqttpublish, portMAX_DELAY );
+            if( xSemaphoreTakeRecursive( mutex_mqttpublish, portMAX_DELAY ) != pdTRUE )
+            {
+                return false;
+            }
         }
 
-        if( obtained != pdTRUE )
-            return;
-
-        if( client.publish( topic , msg ) != false )
+        if( client.publish( topic , msg , retain ) != false )
         {
             // rprintf("%d: >>> Publish MQTT topic in: \"%s\" Message: \"%s\"\n", millis() , topic , msg );
-            rprintf("%s: >>> Publish MQTT topic in: \"%s\" Message: \"%s\"\n", timeClient.getFormattedTime().c_str() , topic , msg );
+            rprintf("%s: >>> Publish MQTT topic in: \"%s\" Message: \"%s\" %s\n", timeClient.getFormattedTime().c_str() , topic , msg , retain ? "#Retain: true":"");
             MQTTpublishfail = 0;
+            success = true;
         }
         else
         {
@@ -491,6 +495,9 @@ int obtained = pdTRUE;
         rprintf("MQTT is not connected (state: %d).\n", client.state() );
         MQTTpublishfail++;
     }
+
+    return success;
+
 }
 
 //------------------------------------------------------------------------------
@@ -503,8 +510,9 @@ public:
     time_t  timing;   // Send timing
     String  topic;
     String  payload;
+    bool    retain;
 
-    MQTTqueueitem( const char * msgtopic , const char * msg , time_t delay = 0 )
+    MQTTqueueitem( const char * msgtopic , const char * msg , time_t delay = 0 , bool retain = false )
     {
         timing = (delay == 0) ? 0 : time( NULL ) + delay;
         // rprintf( "QUEUEitem: time:%d delay: %d timing: %d\n" , time( NULL ) , delay , timing );
@@ -519,10 +527,16 @@ public:
 std::vector<MQTTqueueitem*> MQTTqueue;
 
 
-void MQTTPublish( const char * topic , const char * msg , time_t delay )
+void MQTTPublish( const char * topic , const char * msg , time_t delay , bool retain )
 {
+bool success = true;
 
-    if( delay )
+    if( !delay )
+    {
+        success = _MQTTPublish( topic , msg , retain );
+    }
+
+    if( delay || !success )
     {
         // TODO
         //  Create semaphore and catch it before make anytingh with the queue
@@ -533,7 +547,10 @@ void MQTTPublish( const char * topic , const char * msg , time_t delay )
 
         if( mutex_mqttqueue != NULL )
         {
-            xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY );
+            if( xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY ) != pdTRUE )
+            {
+                return;
+            }
         }
 
         for (std::vector<MQTTqueueitem*>::iterator it = MQTTqueue.begin(); it != MQTTqueue.end() ; it++ )
@@ -547,7 +564,7 @@ void MQTTPublish( const char * topic , const char * msg , time_t delay )
             }
         }
 
-        MQTTqueueitem * message = new MQTTqueueitem( topic , msg , delay );
+        MQTTqueueitem * message = new MQTTqueueitem( topic , msg , delay , retain );
         // Create delayed topic
         MQTTqueue.push_back( message );
 
@@ -555,10 +572,6 @@ void MQTTPublish( const char * topic , const char * msg , time_t delay )
         {
             xSemaphoreGiveRecursive( mutex_mqttqueue );
         }
-    }
-    else
-    {
-        _MQTTPublish( topic , msg );
     }
 
 }
@@ -568,18 +581,15 @@ void MQTTPublish( String topic , String msg , time_t delay )
     MQTTPublish( topic.c_str() , msg.c_str() , delay );
 }
 
-// int strcicmp(char const *a, char const *b)
-// {
-//     for (;; a++, b++) {
-//         int d = tolower(*a) - tolower(*b);
-//         if (d != 0 || !*a)
-//             return d;
-//     }
-// }
+void MQTTPublish( String topic , String msg , bool retain )
+{
+    MQTTPublish( topic.c_str() , msg.c_str() , 0 , retain );
+}
 
 bool MQTTtopicmatch( const char * topic , const char * matchtopic )
 {
-    int len = std::min( strlen(topic) , strlen(matchtopic));
+    // Last character is #
+    int len = std::min( strlen(topic) , strlen(matchtopic)) - 1 ;
     //rprintf( ">>> MQTT matchtopic: [%s]:[%s]=%d\n" , topic , matchtopic,strncasecmp( topic , matchtopic , len ));
     return strncasecmp( topic , matchtopic , len ) == 0 ? true : false;
 }
@@ -589,15 +599,15 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
     bool topicmatch = MQTTtopicmatch( topic , MQTT_CONTROLLERCOMMANDS );
     if( topicmatch || numofMQTTcallbackitems )
     {
+        rprintf(  "-->> Topic received: %s\n" , topic );
         char payloadstr[256];
-        int i = length > sizeof(payloadstr)-1 ? sizeof(payloadstr)-1: length ;
+        int i = length > sizeof(payloadstr)-1 ? sizeof(payloadstr)-1: length;
         if( length > sizeof(payloadstr)-1 )
         {
             rprintf( "!!! WARNING: Payload is to long: %d!\n" , length );
         }
         memcpy( payloadstr , payload , i );
         payloadstr[i] = 0;
-
 
         if( topicmatch )
         {
@@ -609,9 +619,10 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
             )
             {
                 DEBUG_PRINTF( ">>> MQTT controller target is matched.\n" );
-                StaticJsonBuffer<255> json;
-                JsonObject& root = json.parseObject((const char*)payloadstr);
-                if( root.success() )
+
+                JsonDocument    root;
+                DeserializationError err = deserializeJson(root, (const char*)payload);
+                if( err == DeserializationError::Ok )
                 {
                     if( root.containsKey("command") )
                     {
@@ -696,19 +707,20 @@ void _MQTTCallback( char* topic, uint8_t * payload, unsigned int length )
                 }
             }
         }
-        else if( numofMQTTcallbackitems )
+        else if(  numofMQTTcallbackitems )
         {
-            int i;
-            for( i = 0 ; i < numofMQTTcallbackitems ; i++ )
+            std::vector<MQTTcallbackitem *>::iterator it = MQTTcallbacks.begin();
+            while (it != MQTTcallbacks.end())
             {
-                //rprintf( "--- MQTT registered topic: %s\n" , MQTTcallbacks[i].topic );
-                if( MQTTtopicmatch( topic , MQTTcallbacks[i].topic ) ||
-                    MQTTcallbacks[i].alltopics == true
+                if( MQTTtopicmatch( topic , (*it)->topic ) ||
+                    (*it)->alltopics == true
                 )
                 {
+                    // rprintf( "--- MQTT call callback\n" );
                     // WARNING: the payloadstr is 0 terminated!
-                    (*MQTTcallbacks[i].func)( topic , (uint8_t *)payloadstr , length );
+                    (*(*it)->func)( topic , (uint8_t *)payloadstr , length );
                 }
+                it++;                
             }
         }
     }
@@ -720,6 +732,25 @@ void MQTTSubscribe( MQTTCallback callback )
     MQTTcontrollertopiccallback=callback;
 }
 
+void MQTTSubscribe( String topic , MQTTCallback callback )
+{
+    // If using Stirng then must create a copy
+
+    unsigned int length = topic.length() + 1;
+    char * cstr = (char *)malloc( length );
+    if( cstr != NULL  )
+    {
+        topic.toCharArray( cstr , length );
+        cstr[length] = 0;
+    }
+    else
+    {
+        rprintf( "!!! ERROR: Unable to allocate memory for mqtt subscribe!\n" );       
+    }
+
+    MQTTSubscribe( cstr , callback );
+}
+
 // Subscribe callback function to topic
 // It ccould be use # for get all topics
 // Or specific topic: in this case the different callbacks
@@ -727,70 +758,31 @@ void MQTTSubscribe( MQTTCallback callback )
 // is received.
 void MQTTSubscribe( const char * topic , MQTTCallback callback )
 {
-    int idx;
-    idx = numofMQTTcallbackitems;
-
-    if( !numofMQTTcallbackitems )
-    {
-        rprintf( "--- Register MQTT generic topic callback\n" );
-        MQTTcallbacks = new struct MQTTcallbackitem;
-        _MQTTcallbacks = 1;
-        //client.setCallback(_MQTTCallback);
-    }
-    else
-    {
-        // realloc the vector
-        if( (numofMQTTcallbackitems+1) >= _MQTTcallbacks )
-        {
-            int i = _MQTTcallbacks+2;
-            struct MQTTcallbackitem *p;
-
-            p = new struct MQTTcallbackitem [i];
-            memset( p , 0 , sizeof(struct MQTTcallbackitem)*i );
-            memcpy( p , MQTTcallbacks , sizeof(struct MQTTcallbackitem)*_MQTTcallbacks );
-            delete MQTTcallbacks;
-            MQTTcallbacks = p;
-            _MQTTcallbacks = i;
-        }
-    }
+    MQTTcallbackitem * newitem = new struct MQTTcallbackitem;
+    newitem->topic = topic;
+    newitem->func =  callback;
+    newitem->alltopics = strcmp( topic , "#" ) == 0 ? true : false;
+    MQTTcallbacks.push_back(newitem);
+    client.subscribe(topic);
+    rprintf( "--->>> Registered topic: %s\n" , topic );
     numofMQTTcallbackitems++;
 
-    MQTTcallbacks[idx].topic = topic;
-    MQTTcallbacks[idx].func =  callback;
-    MQTTcallbacks[idx].alltopics = strcmp( topic , "#" ) == 0 ? true : false;
-    client.subscribe(topic);
 }
 
 //------------------------------------------------------------------------------
 
 // FIXME: This function is obsolote
-// unsigned int MQTTlooptimer = 0;
-// Call this function in main loop
 void MQTTLoop( void )
 {
-
-    // TODO: remove the obsolote loop calling function
-    // return;
-
-    // if( MQTTinited )
-    // {
-    //     if( !client.connected() )
-    //     {
-    //         _MQTTConnect();
-    //     }
-    //     unsigned long u = millis();
-    //     if( abs(u - MQTTlooptimer) > 100)
-    //     {
-    //         client.loop();
-    //         MQTTlooptimer = u;
-    //     }
-    // }
 }
 
-unsigned long mqttloopthreadcount = 1;
+//------------------------------------------------------------------------------
+
 
 void _MQTTloopthread( void * params )
 {
+
+static unsigned long mqttloopthreadcount = 1;
 
     rprintf("%s: MQTT loop running on core: %d\n" , timeClient.getFormattedTime().c_str() , xPortGetCoreID() );
     while( true )
@@ -809,9 +801,9 @@ void _MQTTloopthread( void * params )
             // }
             // Handle the MQTT queue
 
-            if( mqttloopthreadcount%(10*60) == 0 )
+            if( mqttloopthreadcount%(2400) == 0 )
             {
-                rprintf("%s: MQTT loop thread running on core: %d MQTT server: %s:%u Queue items: %d\n" , timeClient.getFormattedTime().c_str() , xPortGetCoreID() , MQTTserver.c_str() , (unsigned int)MQTTserverport , MQTTqueue.size() );
+                rprintf("%s: MQTT loop thread running on core: %d MQTT server: %s:%u Queue items: %d staksize: %d\n" , timeClient.getFormattedTime().c_str() , xPortGetCoreID() , MQTTserver.c_str() , (unsigned int)MQTTserverport , MQTTqueue.size() , getstacksize() );
                 if( MQTTconnectionfail )
                 {
                     rprintf("%s: MQTT connection fail: %d\n" , timeClient.getFormattedTime().c_str() , MQTTconnectionfail );
@@ -820,7 +812,10 @@ void _MQTTloopthread( void * params )
 
             if( mutex_mqttqueue != NULL )
             {
-                xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY );
+                if( xSemaphoreTakeRecursive( mutex_mqttqueue, portMAX_DELAY ) != pdTRUE )
+                {
+                    continue;
+                }
             }
 
             for (std::vector<MQTTqueueitem*>::iterator it = MQTTqueue.begin(); it != MQTTqueue.end() ; )
@@ -829,12 +824,14 @@ void _MQTTloopthread( void * params )
                 {
                     // rprintf( "QUEUEitem: time:%d timing: %d\n" , time( NULL ) , (*it)->timing );
                     //  Publish the topic
-                    _MQTTPublish( (*it)->topic.c_str() , (*it)->payload.c_str() );
+                    if( _MQTTPublish( (*it)->topic.c_str() , (*it)->payload.c_str() , (*it)->retain ) )
+                    {
+                        // rprintf("_MQTTloopthread::delete item\n" );
+                        delete *it;
+                        // rprintf("_MQTTloopthread::delete vector item\n" );
+                        it = MQTTqueue.erase( it );
+                    }
                     client.loop();
-                    // rprintf("_MQTTloopthread::delete item\n" );
-                    delete *it;
-                    // rprintf("_MQTTloopthread::delete vector item\n" );
-                    it = MQTTqueue.erase( it );
                 }
                 else
                 {
@@ -896,10 +893,11 @@ void _MQTTloopinit( void )
 
     if( pxMQTTloopthread == NULL )
     {
+        // xTaskCreatePinnedToCore
         xTaskCreate(
             _MQTTloopthread,         /* pvTaskCode */
             "MQTT loop",             /* pcName */
-            4000,                   /* usStackDepth */
+            5000,                   /* usStackDepth */
             NULL,                   /* pvParameters */
             0,                      /* uxPriority */
             &pxMQTTloopthread        /* pxCreatedTask */
@@ -919,29 +917,37 @@ void MQTTend( void )
 }
 
 //------------------------------------------------------------------------------
-
-void jsonmerge(JsonObject& dest, JsonObject& src) {
-   for (auto kvp : src)
+// JSON 6.x
+void jsonmerge(JsonObject dest, JsonObjectConst src)
+{
+   for (JsonPairConst kvp : src)
    {
-       dest[kvp.key] = kvp.value;
+     dest[kvp.key().c_str()] = kvp.value();
    }
 }
 
 //------------------------------------------------------------------------------
 
-void MQTTbase::publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject& values  )
+void MQTTbase::publish( const char * basetopic , const char * devclass , const char * device , const char * name , const char * type , JsonObject values  )
 {
-StaticJsonBuffer<128> jsonBuffer;
+JsonDocument    root;
 String topic;
 String payload;
 
+    // -------------------------------------------------------------------------
+    // FIXME:  legacy
+
     topic = basetopic + String('/') + device + String('/') + devclass;
-    JsonObject& root = jsonBuffer.createObject();
     root["name"] = name;
     root["type"] = type;
-    jsonmerge( root , values );
-    root.printTo( payload );
+
+    jsonmerge( root.as<JsonObject>() , values );
+
+    serializeJson( root , payload );
     // payload.replace( "\\r\\n" , "" );
     MQTTPublish( topic , payload );
-    rprintf( "%s: MQTTbase::publish::topic: %s payload: %s\n" , timeClient.getFormattedTime().c_str() , topic.c_str() ,  payload.c_str());
+    // rprintf( "%s: MQTTbase::publish::topic: %s payload: %s\n" , timeClient.getFormattedTime().c_str() , topic.c_str() ,  payload.c_str());
+    // -------------------------------------------------------------------------
+    
 }
+

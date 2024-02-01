@@ -11,10 +11,12 @@
 #endif // DEBUG_PRINTF
 #define DEBUG_MODE() SYSTEMdebug
 
-#ifdef DEBUG_PRINTF
-#undef DEBUG_PRINTF
-//#define DEBUG_PRINTF(f_, ...)
+#ifndef DEBUG_PRINTF
+// #undef DEBUG_PRINTF
+#define DEBUG_PRINTF(f_, ...)
 #endif //DEBUG_PRINTF
+
+#define UTILS_INFINITELOOP -333
 
 bool SYSTEMdebug = false;
 
@@ -33,9 +35,12 @@ extern bool    MDNSinited;
 //------------------------------------------------------------------------------
 // prototypes
 
-char * strcasestr(const char *, const char *);
+char * strca1sestr(const char *, const char *);
+int StringSplit(String sInput, char cDelim, String sParams[], int iMaxParams );
+boolean isint( String value );
 void rprintf( const char *, ... );
 String getMacAddress( bool compact = false );
+String getIPAddress( void );
 void remoteprintinit( void );
 void setdebugmode( bool );
 String getMacAddress( bool );
@@ -56,9 +61,39 @@ typedef void (*reatartprolog_t)();
 void registerprerestart( reatartprolog_t onrestart );
 void restart( void );
 void prerestart( void );
+bool numtobool( int );
+size_t getstacksize( bool show = true );
+void utilsresetloop( int count = -1 );
+
+//----------------------------------------------------------------------
+// Source: https://stackoverflow.com/questions/650162/why-cant-the-switch-statement-be-applied-to-strings/46711735#46711735
+// Use this hash function for string based switch case construction:
+// switch( hash(str) ){
+// case hash("one") : // do something
+// case hash("two") : // do something
+// }
+// 
+// In C++14 and C++17 you can use following hash function:
+// Also C++17 have std::string_view, so you can use it instead of const char *.
+// In C++20, you can try using consteval.
+// constexpr uint32_t hash(const char* data, size_t const size) noexcept{
+//     uint32_t hash = 5381;
+
+//     for(const char *c = data; c < data + size; ++c)
+//         hash = ((hash << 5) + hash) + (unsigned char) *c;
+
+//     return hash;
+// }
+
+// C++11
+constexpr unsigned int hash(const char *s, int off = 0) {                        
+    return !s[off] ? 5381 : (hash(s, off+1)*33) ^ s[off];                           
+}    
 
 //------------------------------------------------------------------------------
-//  This is for backward compatibility for earlier projects
+// This is for backward compatibility for earlier projects
+// The folowing DSTime code is based on the original arduiono iplementation
+// https://github.com/arduino-libraries/NTPClient
 
 #include <time.h>
 // #include <NTPClient.h>
@@ -118,7 +153,16 @@ class DSTTime {
 	const char* server2;
 	const char* server3;
 	const char* timezone = NULL;
+	unsigned long lasterrorprint = 0;
 
+	void errorprint( const char *errormsg )
+	{
+		if( (millis() - lasterrorprint) > 15000 )
+		{
+			rprintf( errormsg );
+			lasterrorprint = millis();
+		}
+	}
   public:
 
  	DSTTime( long param_gmtOffset_sec, int param_daylightOffset_sec, const char* param_server1, const char* param_server2, const char* param_server3 , const char* parma_timezone = NULL )
@@ -182,36 +226,36 @@ class DSTTime {
     int getDay()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_wday;
 	};
     int getHours()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_hour;
 	}
     int getMinutes()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if (!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_min;
 	}
     int getSeconds()
 	{
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
-			rprintf("Failed to obtain time\n");
+			errorprint("Failed to obtain time\n");
 		}
 		return timeinfo.tm_sec;
 	}
@@ -234,7 +278,7 @@ class DSTTime {
 	{
 		char	date[128];
 		struct tm timeinfo;
-		while (!getLocalTime(&timeinfo))
+		if(!getLocalTime(&timeinfo))
 		{
 			rprintf("Failed to obtain time\n");
 		}

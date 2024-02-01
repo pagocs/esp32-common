@@ -6,6 +6,8 @@
 #include "esp_system.h"
 #include <utils.h>
 #include <wificonnect.h>
+#include <ota.h>
+#include <Arduino_CRC32.h>
 
 //------------------------------------------------------------------------------
 
@@ -34,6 +36,91 @@ char * strcasestr(const char *s, const char *find)
 	}
 	return ((char *)s);
 }
+
+//----------------------------------------------------------------------
+
+bool numtobool( int value )
+{
+	return (value == 0 ) ? false : true;
+}
+
+
+// RelayDevices::handlecommand: myesp32/esp32-A4CF129A4760/relay/3/settings::On
+// 19:05:05.122 -> StringSplit::iposdelim: 0::7
+// 19:05:05.122 -> StringSplit::piece: myesp3
+// 19:05:05.122 -> StringSplit::iposdelim: 8::26
+// 19:05:05.122 -> StringSplit::piece: esp32-A4CF129A476
+// 19:05:05.122 -> StringSplit::iposdelim: 27::32
+// 19:05:05.122 -> StringSplit::piece: rela
+// 19:05:05.122 -> StringSplit::iposdelim: 33::34
+// 19:05:05.122 -> StringSplit::iposdelim: 35::-1
+// 19:05:05.122 -> StringSplit::return iParamCount 4
+// 19:05:05.155 -> RelayDevices::handlecommand:stringsplit: 4
+// 19:05:05.155 -> RelayDevices::handlecommand:topicpiece[3]: myesp
+//         *                 *     * *
+// 012345678901234567890123456789012345678
+// myesp32/esp32-A4CF129A4760/relay/3/
+
+//----------------------------------------------------------------------
+// Based on:
+// https://arduino.stackexchange.com/questions/1013/how-do-i-split-an-incoming-string
+
+int StringSplit(String sInput, char cDelim, String sParams[], int iMaxParams )
+{
+    int iParamCount = 0;
+    int iPosDelim, iPosStart = 0;
+	int length = sInput.length();
+
+    do 
+	{
+        // Searching the delimiter using indexOf()
+        iPosDelim = sInput.indexOf(cDelim,iPosStart);
+		// rprintf( "StringSplit::iposdelim: %d::%d::%d\n" , iPosStart , iPosDelim , sInput.length() );
+
+        if( (iPosDelim > iPosStart || iPosDelim < 0 ) &&
+			iPosStart < length &&
+			iParamCount < iMaxParams
+		)
+		{
+            // Adding a new parameter using substring() 
+			sParams[iParamCount++] = sInput.substring(iPosStart, iPosDelim == -1 ? length : iPosDelim );
+			// rprintf( "StringSplit::piece: %s\n" , sInput.substring(iPosStart,iPosDelim).c_str() );
+        }
+        iPosStart = iPosDelim + 1;
+
+    } while (iPosDelim >= 0 && iParamCount < iMaxParams );
+
+	// rprintf( "StringSplit::return iParamCount %d\n" , iParamCount );
+    return iParamCount;
+}
+
+//----------------------------------------------------------------------
+
+boolean isint( String value )
+{
+int	len = value.length();
+ 
+    if (len == 0)
+        return false;
+  
+    for( int i = 0 ; i < len ; ++i )
+	{
+        if( !isDigit( value.charAt(i) ) )
+	        return false;
+	}
+    return true;
+}
+
+
+// int strcicmp(char const *a, char const *b)
+// {
+//     for (;; a++, b++) {
+//         int d = tolower(*a) - tolower(*b);
+//         if (d != 0 || !*a)
+//             return d;
+//     }
+// }
+
 //----------------------------------------------------------------------
 /* Time Stamp */
 
@@ -65,12 +152,13 @@ char * strcasestr(const char *s, const char *find)
 // //#define NTP_ADDRESS  "0.pool.ntp.org"
 // #define NTP_ADDRESS  "pool.ntp.org"
  // TODO remove this!!!
+bool			bootloopcheck = true;
 unsigned long   ntplastsync = 0;
 
 // WiFiUDP 	ntpUDP;
 // NTPClient 	timeClient(ntpUDP, NTP_ADDRESS, NTP_OFFSET, NTP_INTERVAL);
 
-DSTTime		timeClient( 1 * 3600, 3600, "pool.ntp.org" , "0.uk.pool.ntp.org", "time.nist.gov" );
+DSTTime		timeClient( 1 * 3600, 3600, "hu.pool.ntp.org", "pool.ntp.org", "time.cloudflare.com" );
 
 //------------------------------------------------------------------------------
 // https://github.com/espressif/arduino-esp32/blob/master/libraries/Preferences/src/Preferences.cpp
@@ -103,6 +191,38 @@ const char *formatstr;
 	return String(baseMacChr);
 }
 
+String getIPAddress( void )
+{
+	return WiFi.localIP().toString();
+}
+
+//------------------------------------------------------------------------------
+//
+
+void utilsresetloop( int count )
+{
+	bool infineite = false;
+	// If count is negative that means infinite
+
+	if( count == UTILS_INFINITELOOP )
+	{
+		infineite = true;
+	}
+
+	// Disable the loop reset the boot loop counter
+	bootloopcheck = false;
+
+	while( infineite == true || count-- < 0 )
+	{
+		WifiConnect();
+		OTAHandle();
+		utilsloop();
+		delay( 150 );
+	}
+	ESP.restart();
+
+}
+
 //------------------------------------------------------------------------------
 
 void utilsinit( void )
@@ -123,6 +243,54 @@ void utilsinit( void )
 	timeClient.update();
 
 	devicebooted = timeClient.getFormattedTime();
+
+	//--------------------------------------------------------------------------
+	// Bootloop detection
+
+	getstacksize();
+
+	Preferences savedprefs;
+	unsigned int bootcount = 0;
+
+	if( savedprefs.begin("Prefs", false) )
+	{
+		bootcount = savedprefs.getUChar( "rebootcount", 0 );
+		savedprefs.putUChar( "rebootcount" , bootcount+1 );
+
+		rprintf( ">>> Reboot count is: %d\n" , bootcount );
+	}
+
+	if( bootcount > 5 )
+	{
+		char devicename[32];
+		rprintf( "!!! ERROR: Bootloop detected. Enter emergency OTA state!\n");
+
+		sprintf( devicename , "emergency-%s" , getMacAddress( true ).c_str());
+		OTAinit( 3232 , devicename );
+
+		// Reset the reboot count to give a chance for the update....
+		savedprefs.putUChar( "rebootcount" , 0 );
+		savedprefs.end();
+
+		// // Disable the loop reset the boot loop counter
+		// bootloopcheck = false;
+		//
+		// while( true )
+		// {
+		// 	WifiConnect();
+		// 	OTAHandle();
+		// 	utilsloop();
+		// 	delay( 500 );
+		// }
+		// ESP.restart();
+
+		utilsresetloop( UTILS_INFINITELOOP );
+
+	}
+
+	savedprefs.end();
+
+	//--------------------------------------------------------------------------
 
 	initwatchdog();
 }
@@ -188,51 +356,87 @@ void remoteprintinit( void )
 			// FIXME: Init if not inited!
 			//Serial.begin(BAUD);    // Initialise the serial port
 			rprintinited = true;
-			// mutex_rptintf = xSemaphoreCreateMutex();
-			vSemaphoreCreateBinary( mutex_rptintf );
 		}
 		else
 		{
-			Serial.printf("!!! ERROR: Remote print cannot init before Wifi connect!\n");
+			Serial.printf("!!! ERROR: Remote print cannot init use without Wifi connection!\n");
 		}
+
+		// mutex_rptintf = xSemaphoreCreateMutex();
+		vSemaphoreCreateBinary( mutex_rptintf );
+
 	}
 
 }
 
+//------------------------------------------------------------------------------
+
+unsigned int 	rp_filteredlines = 0;
+uint32_t 		rp_lastcrc = 0;
+
 void rprintf( const char * format, ... )
 {
-int obtained = pdTRUE;
+int 			obtained = pdTRUE;
+char 			buffer[684];
+char 			filtered[64] = "";
+int 			size;
+va_list 		args;
+Arduino_CRC32 	crc32;
 
-	if( mutex_rptintf != NULL )
-	{
-		obtained = xSemaphoreTake( mutex_rptintf, portMAX_DELAY );
-	}
-
-	if( obtained != pdTRUE )
-		return;
-
-	char buffer[512];
-	int size;
-	va_list args;
 	va_start(args, format);
 
 	size = vsnprintf(buffer,sizeof(buffer),format, args);
 	va_end(args);
 
-	if(rprintinited && debugclient && debugclient.connected() )
+	if( mutex_rptintf != NULL )
 	{
-		debugclient.printf(buffer);
+		obtained = xSemaphoreTake( mutex_rptintf, portMAX_DELAY );
+		if( obtained != pdTRUE )
+			return;
+	}
+
+	// Filter the duplicated lines
+	uint32_t const crc = crc32.calc((uint8_t const *)buffer , size );
+
+	if( rp_lastcrc == 0 || crc != rp_lastcrc )
+	{
+		bool filteredmsg = false;
+		// Create filtered line text...
+		if( rp_filteredlines )
+		{
+			sprintf( filtered , "... %d same line(s) was filtered\n" , rp_filteredlines );
+			filteredmsg = true;
+		}
+
+		rp_filteredlines = 0;
+		rp_lastcrc = crc;
+
+		if(rprintinited && debugclient && debugclient.connected() )
+		{
+			if( filteredmsg )
+			{
+				debugclient.printf(filtered);
+			}
+			debugclient.printf(buffer);
+		}
+		else
+		{
+			if( filteredmsg )
+			{
+				debugclient.printf(filtered);
+			}
+			Serial.printf( buffer );
+		}
 	}
 	else
 	{
-		Serial.printf( buffer );
+		rp_filteredlines++;
 	}
 
     if( size > sizeof(buffer) )
     {
         Serial.printf("\n!!! WARNING: Buffer is shorter than necessary, output is truncated.\n");
     }
-
 	if( mutex_rptintf != NULL )
 	{
 		xSemaphoreGive( mutex_rptintf );
@@ -358,6 +562,7 @@ void feedwatchdog( void )
 
 void utilsloop( void )
 {
+
 	remoteprintloop();
 	feedwatchdog();
 	if( ( millis() - ntplastsync ) > 86000000 )
@@ -367,6 +572,31 @@ void utilsloop( void )
 		timeClient.update();
 	}
 
+	//--------------------------------------------------------------------------
+	//  Clear the reboot counter if still running
+	if( ( millis() - ntplastsync ) > 60000 && bootloopcheck )
+	{
+		// clear boot count
+		bootloopcheck = false;
+		Preferences savedprefs;
+		unsigned int bootcount = 0;
+
+		rprintf( "\n\n>>> Checking the reboot counter...\n\n" );
+
+		if( savedprefs.begin("Prefs", false) )
+		{
+			bootcount = savedprefs.getUChar( "rebootcount", 0 );
+			if ( bootcount > 0 )
+			{
+				if( bootcount > 1 )
+				{
+					rprintf( "!!! NOTICE: Reset the reboot counter!\n" );
+				}
+				savedprefs.putUChar( "rebootcount" , 0 );
+			}
+			savedprefs.end();
+		}
+	}
 }
 
 //------------------------------------------------------------------------------
@@ -482,5 +712,31 @@ struct MDNShost * MDNSgethost( int idx )
 
 	return host;
 }
+
+size_t getstacksize( bool show )
+{
+
+void * StackPtrAtStart;
+void * StackPtrEnd;
+UBaseType_t watermarkStart;
+void* SpStart = NULL;
+size_t stacksize;
+void* SpActual = NULL;
+
+
+	StackPtrAtStart = (void *)&SpStart;
+	watermarkStart =  uxTaskGetStackHighWaterMark(NULL);
+	StackPtrEnd = StackPtrAtStart - watermarkStart;
+
+	stacksize = (uint32_t)&SpActual - (uint32_t)StackPtrEnd;
+
+	if( show )
+	{
+		Serial.printf("\n>>> Free Stack at actual position is: %d \r\n", stacksize );
+	}
+
+	return stacksize;
+}
+
 
 // #endif // _UTILS

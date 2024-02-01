@@ -11,7 +11,7 @@
 
 #ifndef DEBUG_PRINTF
 #define _OTA_DEBUG_PRINTF
-#define DEBUG_PRINTF(f_, ...)
+// #define DEBUG_PRINTF(f_, ...)
 #endif // DEBUG_PRINTF
 
 #include <utils.h>
